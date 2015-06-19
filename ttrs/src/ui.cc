@@ -2,6 +2,8 @@
 #include "board.h"
 #include "evaluation/ulm.h"
 #include "evaluation/lines.h"
+#include "representation/top_column_heights.h"
+#include "representation/column_heights.h"
 #include "types.h"
 #include "spawner/random.h"
 #include "spawner/constant.h"
@@ -21,20 +23,16 @@ public:
 		board_.set_spawner(&spawner_);
 		agent_.set_board(&board_);
 		agent_.set_evaluation(&evaluation_);
+		agent_.set_representation(&representation_);
 		agent_.reset();
 		
 		main_();
 	}
 	
 private:
-	using spawner_type = random_spawner;//constant_spawner<piece_kind::dot>;
-	using evaluation_type = ulm_board_evaluation;
-
-	struct game_statistics {
-		float accumulated_reward = 0.0;
-		int lines_cleared = 0;
-		int number_of_actions = 0;
-	};
+	using spawner_type = constant_spawner<piece_kind::dot>;
+	using evaluation_type = lines_board_evaluation;
+	using representation_type = column_heights_board_evaluation;
 
 	WINDOW* board_window_;
 	WINDOW* menu_window_;
@@ -42,10 +40,9 @@ private:
 
 	board board_;
 	evaluation_type evaluation_;
+	representation_type representation_;
 	spawner_type spawner_;
 	agent agent_;
-	std::vector<game_statistics> stats_;
-
 
 	void main_() {
 		initscr();
@@ -95,44 +92,82 @@ private:
 	
 	void train_() {
 		echo();
-		werase(menu_window_);
-		wprintw(menu_window_, "Number of games: ");
-		wrefresh(menu_window_);
+
+		int actions = 10000;
+		int draw = 0;		
 		
-		int games, actions = -1;
-		wscanw(menu_window_, "%i", &games);
-		if(games == 0) {
+		{
 			wprintw(menu_window_, "Number of actions: ");
-			wrefresh(menu_window_);
 			wscanw(menu_window_, "%i", &actions);
-
-			agent_.train(-1, actions);
+		
+			double v;
 			werase(menu_window_);
-			wprintw(menu_window_, "Training... %i actions", actions);
-			wrefresh(menu_window_);
+			wprintw(menu_window_, "Exploration rate: ");
+			if(wscanw(menu_window_, "%f", &v) != ERR) agent_.exploration_rate = v;
+		
+			wprintw(menu_window_, "Discounting factor: ");
+			if(wscanw(menu_window_, "%f", &v) != ERR) agent_.discounting_factor = v;
 
-		} else {
-			for(int i = 0; i < games; ++i) {
-				agent_.train(1, -1);
+			wprintw(menu_window_, "Learning rate: ");
+			if(wscanw(menu_window_, "%f", &v) != ERR) agent_.learning_rate = v;
+		
+			wprintw(menu_window_, "Draw board: ");
+			wscanw(menu_window_, "%i", &draw);
+		}
+		
+		werase(menu_window_);
+		wrefresh(menu_window_);
+		cbreak();
+		noecho();
+		
+		std::vector<game_statistics> stats;
+		stats.emplace_back();
+		game_statistics* current_stat = &stats.back();
+		
+		board_.reset();
+		for(int i = 0; i < actions; ++i) {
+			if(draw || i % 1000 == 0) {
 				werase(menu_window_);
-				wprintw(menu_window_, "Training... game %i of %i", i, games);
+				wprintw(
+					menu_window_,
+						"Training.... %i of %i\n"
+						"%i games finished",
+					i,
+					actions,
+					stats.size() - 1
+				);
 				wrefresh(menu_window_);
+			}
+		
+			agent_.train(*current_stat);
+			
+			if(draw) {
+				draw_board_();
+				show_stats_(stats);
+			}
+			
+			if(board_.game_over()) {
+				stats.emplace_back();
+				current_stat = &stats.back();
+				board_.reset();
 			}
 		}
 		
+		nocbreak();	
 	}
 	
 	void menu_() {		
 		for(;;) {
-			noecho();
 			nodelay(menu_window_, false);
+			noecho();
+			cbreak();
 			
 			werase(menu_window_);
 			wprintw(menu_window_,
 				"Options: \n"
-				"  p) Play \n"
-				"  t) Train agent\n"
-				"  a) Test agent\n"
+				"  p) Play            r) Reset agent\n"
+				"  t) Train agent     e) Export agent\n"
+				"  a) Test agent      i) Import agent\n"
 				"  q) Exit"
 			);
 			wrefresh(menu_window_);
@@ -146,15 +181,21 @@ private:
 			case 'p':
 				user_play_();
 				break;
-		
 			case 't':
 				train_();
 				break;
-				
 			case 'a':
 				agent_play_();
 				break;
-		
+			case 'r':
+				agent_.reset();
+				break;
+			case 'e':
+				agent_.export_values("agent.txt");
+				break;
+			case 'i':
+				agent_.import_values("agent.txt");
+				break;
 			case 'q':
 				return;
 			}
@@ -162,6 +203,15 @@ private:
 	}
 	
 	void agent_play_() {
+		double v; int i;
+		echo();
+		werase(menu_window_);
+
+		wprintw(menu_window_, "Discounting factor: ");
+		if(wscanw(menu_window_, "%f", &v) != ERR) agent_.discounting_factor = v;
+
+		noecho();
+
 		werase(menu_window_);
 		wprintw(menu_window_,
 			"Options: \n"
@@ -169,8 +219,6 @@ private:
 			"  q) Return to menu"
 		);
 		wrefresh(menu_window_);
-		
-		stats_.clear();
 
 		cbreak();
 		noecho();
@@ -178,18 +226,16 @@ private:
 		halfdelay(1);
 		bool delay = true;
 	
-		stats_.emplace_back();
-		game_statistics* current_stat = &stats_.back();
+		std::vector<game_statistics> stats;
+		stats.emplace_back();
+		game_statistics* current_stat = &stats.back();
 	
 		board_.reset();
 		for(;;) {
-			auto a = agent_.greedy_action();
-			++current_stat->number_of_actions;
-			current_stat->accumulated_reward += evaluation_.action_reward(board_, a);
-			
-			board_.execute_action(a);
-						
+			agent_.play(*current_stat);
+									
 			draw_board_();
+			
 			switch(wgetch(board_window_)) {
 			case 'd':
 				delay = !delay;
@@ -201,31 +247,28 @@ private:
 			default:
 				break;
 			}
-			
-			board_.tick();
-			current_stat->lines_cleared = board_.lines_cleared();
-			
+						
 			if(board_.game_over()) {
-				stats_.emplace_back();
-				current_stat = &stats_.back();
+				stats.emplace_back();
+				current_stat = &stats.back();
 				board_.reset();
 			}
 			
-			update_stats_();
+			show_stats_(stats);
 		}
 		
 		nocbreak();
 	}
 	
-	void update_stats_() {
+	void show_stats_(const std::vector<game_statistics>& stats) {
 		werase(stats_window_);
 	
-		int finished_games = stats_.size() - 1;
+		int finished_games = stats.size() - 1;
 		if(finished_games > 0) {	
 			double avg_acc_reward = 0;
 			double avg_num_actions = 0;
 			double avg_lines_cleared = 0;
-			for(auto&& st = stats_.begin(); st != stats_.end()-1; ++st) {
+			for(auto&& st = stats.begin(); st != stats.end()-1; ++st) {
 				avg_acc_reward += st->accumulated_reward;
 				avg_lines_cleared += st->lines_cleared;
 				avg_num_actions += st->number_of_actions;
@@ -248,7 +291,7 @@ private:
 			);	
 		}
 
-		const game_statistics& st = stats_.back();
+		const game_statistics& st = stats.back();
 		wprintw(
 			stats_window_,
 				"Current game:\n"

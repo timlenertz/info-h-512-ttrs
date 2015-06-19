@@ -14,7 +14,7 @@ class spawner;
 
 class board {
 public:
-	constexpr static std::ptrdiff_t width = 10;
+	constexpr static std::ptrdiff_t width = 4;
 	constexpr static std::ptrdiff_t height = 20;
 
 	struct action {

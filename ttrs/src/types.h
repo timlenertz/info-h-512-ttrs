@@ -16,6 +16,12 @@ inline std::ostream& operator<<(std::ostream& str, const position& pos) {
 	return str << pos[0] << "," << pos[1];
 }
 
+struct game_statistics {
+	float accumulated_reward = 0;
+	int lines_cleared = 0;
+	int number_of_actions = 0;
+};
+
 }
 
 #endif

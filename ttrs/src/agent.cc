@@ -1,69 +1,73 @@
 #include "agent.h"
 #include "board.h"
 #include "board_evaluation.h"
+#include "board_representation.h"
 #include "random.h"
 #include <cmath>
 #include <cassert>
 #include <vector>
 #include <iostream>
+#include <fstream>
+#include <type_traits>
 
 namespace ttrs {
 
-void agent::train(int num_games, int num_actions) { return;
+void agent::train(game_statistics& stat) {
 	auto& rng = random_number_generator();
 	
-	board_->reset();
+	std::uniform_real_distribution<float> dist(0, 1);
+	bool explore = (dist(rng) < exploration_rate);
+
+	action a;	
+	if(explore) {
+		// Exploration: Take random action
+		auto actions = board_->available_actions();
+		assert(actions.size() > 0);
+			
+		std::uniform_int_distribution<std::ptrdiff_t> dist(0, actions.size() - 1);
+		a = actions.at(dist(rng));
+
+	} else {
+		// Exploitation: Take greedy action
+		a = greedy_action();
+	}
 	
-	int actions = 0;
-	int games_max = games_trained_ + num_games;
-	while(games_trained_ != games_max && actions != num_actions) {
-		assert(! board_->game_over());
+	float reward = evaluation_->action_reward(*board_, a);
+	long old_state = representation_->state(*board_);
+	
+	board_->execute_action(a);
+	board_->tick();
+	
+	stat.accumulated_reward += reward;
+	stat.lines_cleared = board_->lines_cleared();
+	stat.number_of_actions++;
+	
+	if(! explore) {
+		// Exploitation
+		// Greedy action was taken. Now update state_values_ to improve its prediction.
+		long new_state = representation_->state(*board_);
 		
-		std::uniform_real_distribution<float> dist(0, 1);
-		bool explore = (dist(rng) < exploration_rate);
-		
-		action a;
-		float reward; long old_state;
-		if(explore) {
-			auto actions = board_->available_actions();
-			assert(actions.size() > 0);
-			
-			std::uniform_int_distribution<std::ptrdiff_t> dist(0, actions.size() - 1);
-			a = actions.at(dist(rng));
-			
-		} else {
-			a = greedy_action();
-			
-			reward = evaluation_->action_reward(*board_, a);
-			old_state = evaluation_->state(*board_);
-		}
-		
-		board_->execute_action(a);
-		board_->tick();
-		++actions;
-
-		if(! explore) {
-			long new_state = evaluation_->state(*board_);
-						
-			float old_v = state_values_.at(old_state);
-			float new_v = state_values_.at(new_state);
+		float old_v = state_values_.at(old_state);
+		float new_v = state_values_.at(new_state);
 					
-			//float add = reward_factor*reward + discounting_factor*new_v - old_v;
-			//state_values_.at(old_state) += learning_rate() * add;
-		}
-
-		if(board_->game_over()) {
-			board_->reset();
-			++games_trained_;
-		}
+		float temporal_difference_error = reward + discounting_factor*new_v - old_v;
+		state_values_.at(old_state) += learning_rate * temporal_difference_error;
 	}
 }
 
-float agent::learning_rate() const {
-	return 1.0f / (1.0f + 15.0f * std::log(games_trained_ + 1));
+void agent::play(game_statistics& stat) {
+	action a = greedy_action();
+	float reward = evaluation_->action_reward(*board_, a);
+	board_->execute_action(a);
+	board_->tick();
+
+	stat.accumulated_reward += reward;
+	stat.lines_cleared = board_->lines_cleared();
+	stat.number_of_actions++;
 }
 
-agent::action agent::greedy_action() const {
+
+agent::action agent::greedy_action(bool value_only) const {
 	auto actions = board_->available_actions();
 	if(actions.empty()) throw std::logic_error("No available actions.");
 	
@@ -71,11 +75,15 @@ agent::action agent::greedy_action() const {
 	std::vector<action> max_actions;
 	
 	for(const action& a : actions) {
-		board copy = *board_;
+		float rv;
 		float r = evaluation_->action_reward(*board_, a);
+		board copy = *board_;
 		copy.execute_action(a);
-		float v = state_values_.at(evaluation_->state(*board_));
-		float rv = reward_factor*r + value_factor*v;
+		copy.tick();
+		float v = state_values_.at(representation_->state(copy));
+
+		if(value_only) rv = v;
+		else rv = r + discounting_factor*v;
 
 		if(rv > max_rv) {
 			max_rv = rv;
@@ -86,7 +94,7 @@ agent::action agent::greedy_action() const {
 	}
 	
 	assert(max_actions.size() > 0);
-	if(max_actions.size() == 1) {
+	if(max_actions.size() == 1 || deterministic) {
 		return max_actions[0];
 	} else {
 		std::uniform_int_distribution<std::ptrdiff_t> dist(0, max_actions.size() - 1);
@@ -98,9 +106,24 @@ agent::action agent::greedy_action() const {
 void agent::reset() {
 	games_trained_ = 0;
 	state_values_ = std::vector<float>(
-		evaluation_->number_of_states(),
+		representation_->number_of_states(),
 		0.0
 	);
+}
+
+void agent::export_values(const std::string& filename) const {
+	std::ofstream str(filename);
+	for(float v : state_values_) str << v << '\n';
+}
+
+void agent::import_values(const std::string& filename) {
+	std::ifstream str(filename);
+	state_values_.clear();
+	float v;
+	while(str >> v) {
+		state_values_.push_back(v);
+		str.ignore(std::numeric_limits<std::streamsize>::max(), '\n');	
+	}
 }
 
 }

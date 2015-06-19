@@ -2,32 +2,41 @@
 #define TTRS_AGENT_H_
 
 #include <vector>
+#include <string>
 #include "board.h"
+#include "types.h"
 
 namespace ttrs {
 
 class board_evaluation;
+class board_representation;
 
 class agent {
 public:
 	using action = board::action;
 	
 	void reset();
-	void train(int games, int actions = -1);
-	action greedy_action() const;
+	
+	void train(game_statistics&);
+	void play(game_statistics&);
+	
+	action greedy_action(bool value_only = false) const;
 	
 	void set_evaluation(const board_evaluation* ev) { evaluation_ = ev; }
+	void set_representation(const board_representation* re) { representation_ = re; }
 	void set_board(board* brd) { board_ = brd; }
 
 	float exploration_rate = 0.1;
+	float discounting_factor = 0.2;
+	float learning_rate = 0.4;
+	bool deterministic = true;
 	
-	float reward_factor = 1.0;
-	float value_factor = 0.0;
-
-	float learning_rate() const;
+	void export_values(const std::string& filename) const;
+	void import_values(const std::string& filename);
 	
 private:
 	const board_evaluation* evaluation_;
+	const board_representation* representation_;
 	board* board_;
 	
 	int games_trained_;

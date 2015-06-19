@@ -4,27 +4,6 @@
 
 namespace ttrs {
 
-long ulm_board_evaluation::state(const board& brd) const {
-	long ind = 0;
-	long factor = 1;
-
-	int maxh = brd.maximal_height();
-	for(std::ptrdiff_t x = 0; x != board::width; ++x) {
-		int dh = maxh - brd.column_height(x);
-		int value = (dh > 4 ? 0 : 4 - dh);
-		ind += factor * value;
-		factor *= 5;
-	}
-
-	return ind;
-}
-
-long ulm_board_evaluation::number_of_states() const {
-	long c = 1;
-	for(int i = 0; i != board::width; ++i) c *= 5;
-	return c;
-}
-
 float ulm_board_evaluation::action_reward(const board& brd, const board::action& a) const {
 	float old_r = reward_potential_(brd);
 	board copy = brd;
