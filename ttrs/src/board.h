@@ -14,8 +14,8 @@ class spawner;
 
 class board {
 public:
-	static std::ptrdiff_t constexpr width = 10;
-	static std::ptrdiff_t constexpr height = 20;
+	constexpr static std::ptrdiff_t width = 10;
+	constexpr static std::ptrdiff_t height = 20;
 
 	struct action {
 		int orientation;
@@ -50,7 +50,11 @@ public:
 	
 	bool game_over() const { return game_over_; }
 	
+	/// Get set of possible actions that can be executed at current state.
+	/// Action = immediately put new incoming piece at certain X position and certain orientation,
+	/// and then do hard drop. Does not correspond 1:1 to actions a human player can do.
 	std::vector<action> available_actions() const;
+	
 	bool can_execute_action(const action&) const;
 	void execute_action(const action&);
 	

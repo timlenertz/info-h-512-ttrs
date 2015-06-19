@@ -30,7 +30,10 @@ float ulm_board_evaluation::action_reward(const board& brd, const board::action&
 	board copy = brd;
 	copy.execute_action(a);
 	copy.tick();
-	return old_r - reward_potential_(copy);
+	float new_r = reward_potential_(copy);
+	
+	if(new_r < old_r) return 10*(old_r - new_r);
+	else return old_r - new_r;
 }
 
 float ulm_board_evaluation::reward_potential_(const board& brd) const {

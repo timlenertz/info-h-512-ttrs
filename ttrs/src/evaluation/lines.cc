@@ -33,7 +33,7 @@ float lines_board_evaluation::action_reward(const board& brd, const board::actio
 	if(copy.game_over()) {
 		return -3.0;
 	} else {
-		return copy.lines_cleared() - old_lc;
+		return (copy.lines_cleared() - old_lc)*10;
 	}
 }
 

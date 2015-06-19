@@ -9,7 +9,7 @@
 
 namespace ttrs {
 
-void agent::train(int num_games, int num_actions) {
+void agent::train(int num_games, int num_actions) { return;
 	auto& rng = random_number_generator();
 	
 	board_->reset();
@@ -48,8 +48,8 @@ void agent::train(int num_games, int num_actions) {
 			float old_v = state_values_.at(old_state);
 			float new_v = state_values_.at(new_state);
 					
-			float add = reward + discounting_factor*new_v - old_v;
-			state_values_.at(old_state) += learning_rate() * add;
+			//float add = reward_factor*reward + discounting_factor*new_v - old_v;
+			//state_values_.at(old_state) += learning_rate() * add;
 		}
 
 		if(board_->game_over()) {
@@ -75,7 +75,7 @@ agent::action agent::greedy_action() const {
 		float r = evaluation_->action_reward(*board_, a);
 		copy.execute_action(a);
 		float v = state_values_.at(evaluation_->state(*board_));
-		float rv = r + discounting_factor*v;
+		float rv = reward_factor*r + value_factor*v;
 
 		if(rv > max_rv) {
 			max_rv = rv;

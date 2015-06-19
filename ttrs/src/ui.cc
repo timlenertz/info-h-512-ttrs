@@ -28,7 +28,7 @@ public:
 	
 private:
 	using spawner_type = random_spawner;//constant_spawner<piece_kind::dot>;
-	using evaluation_type = ulm_board_evaluation;//lines_board_evaluation;
+	using evaluation_type = ulm_board_evaluation;
 
 	struct game_statistics {
 		float accumulated_reward = 0.0;
@@ -128,7 +128,13 @@ private:
 			nodelay(menu_window_, false);
 			
 			werase(menu_window_);
-			wprintw(menu_window_, "Options: \n  p) Play \n  t) Train agent\n  a) Test agent\n  q) Exit");
+			wprintw(menu_window_,
+				"Options: \n"
+				"  p) Play \n"
+				"  t) Train agent\n"
+				"  a) Test agent\n"
+				"  q) Exit"
+			);
 			wrefresh(menu_window_);
 
 			int ch = wgetch(menu_window_);
@@ -157,7 +163,11 @@ private:
 	
 	void agent_play_() {
 		werase(menu_window_);
-		wprintw(menu_window_, "Options: \n  d) Toggle delay\n  q) Return to menu");
+		wprintw(menu_window_,
+			"Options: \n"
+			"  d) Toggle delay\n"
+			"  q) Return to menu"
+		);
 		wrefresh(menu_window_);
 		
 		stats_.clear();
@@ -168,14 +178,15 @@ private:
 		halfdelay(1);
 		bool delay = true;
 	
-		int num_actions = 0;
-		float acc_reward = 0;
+		stats_.emplace_back();
+		game_statistics* current_stat = &stats_.back();
 	
 		board_.reset();
 		for(;;) {
 			auto a = agent_.greedy_action();
-			++num_actions;
-			acc_reward += evaluation_.action_reward(board_, a);
+			++current_stat->number_of_actions;
+			current_stat->accumulated_reward += evaluation_.action_reward(board_, a);
+			
 			board_.execute_action(a);
 						
 			draw_board_();
@@ -192,19 +203,15 @@ private:
 			}
 			
 			board_.tick();
+			current_stat->lines_cleared = board_.lines_cleared();
 			
 			if(board_.game_over()) {
-				game_statistics st;
-				st.lines_cleared = board_.lines_cleared();
-				st.number_of_actions = num_actions;
-				st.accumulated_reward = acc_reward;
+				stats_.emplace_back();
+				current_stat = &stats_.back();
 				board_.reset();
-				stats_.push_back(st);
-				acc_reward = 0;
-				num_actions = 0;
-				
-				update_stats_();
 			}
+			
+			update_stats_();
 		}
 		
 		nocbreak();
@@ -213,30 +220,48 @@ private:
 	void update_stats_() {
 		werase(stats_window_);
 	
-		int n = stats_.size();
-		if(n == 0) return;
-		
-		double avg_acc_reward = 0;
-		double avg_num_actions = 0;
-		double avg_lines_cleared = 0;
-		for(const game_statistics& st : stats_) {
-			avg_acc_reward += st.accumulated_reward;
-			avg_num_actions += st.number_of_actions;
-			avg_lines_cleared += st.lines_cleared;
-		}
-		avg_acc_reward /= n;
-		avg_num_actions /= n;
-		avg_lines_cleared /= n;
+		int finished_games = stats_.size() - 1;
+		if(finished_games > 0) {	
+			double avg_acc_reward = 0;
+			double avg_num_actions = 0;
+			double avg_lines_cleared = 0;
+			for(auto&& st = stats_.begin(); st != stats_.end()-1; ++st) {
+				avg_acc_reward += st->accumulated_reward;
+				avg_lines_cleared += st->lines_cleared;
+				avg_num_actions += st->number_of_actions;
+			}
+			avg_acc_reward /= finished_games;
+			avg_num_actions /= finished_games;
+			avg_lines_cleared /= finished_games;
 	
-		werase(stats_window_);
+			wprintw(
+				stats_window_,
+					"Finished games: %i\n"
+					"Per game:\n"
+					"   Avg accumulated reward: %f\n"
+					"   Avg lines cleared: %f\n"
+					"   Avg actions count: %f\n\n",
+				finished_games,
+				avg_acc_reward,
+				avg_lines_cleared,
+				avg_num_actions
+			);	
+		}
+
+		const game_statistics& st = stats_.back();
 		wprintw(
 			stats_window_,
-			"Games played: %i\nAverage accumulated reward: %f\nAverage lines cleared: %f\nAverage actions count: %f",
-			n,
-			avg_acc_reward,
-			avg_lines_cleared,
-			avg_num_actions
+				"Current game:\n"
+				"   Accumulated reward: %f\n"
+				"   Lines cleared: %i\n"
+				"   Actions count: %i\n"
+				"   Reward / action: %f\n",
+			st.accumulated_reward,
+			st.lines_cleared,
+			st.number_of_actions,
+			(st.number_of_actions > 0 ? st.accumulated_reward / st.number_of_actions : 0)
 		);
+
 		wrefresh(stats_window_);
 	}
 	

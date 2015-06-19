@@ -20,7 +20,9 @@ public:
 	void set_board(board* brd) { board_ = brd; }
 
 	float exploration_rate = 0.1;
-	float discounting_factor = 0.5;
+	
+	float reward_factor = 1.0;
+	float value_factor = 0.0;
 
 	float learning_rate() const;
 	
